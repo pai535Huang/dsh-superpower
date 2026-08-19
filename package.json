@@ -1,0 +1,48 @@
+{
+  "name": "dsh-superpower",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DeepSeek Harness preset adapter for obra/superpowers",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json",
+    "./superpowers/*": "./superpowers/*"
+  },
+  "files": [
+    "lib",
+    "scripts",
+    "superpowers",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "validate": "node validate.mjs",
+    "sync": "node scripts/sync-presets.mjs",
+    "verify": "node scripts/verify-install.mjs",
+    "check": "npm test && npm run validate && bash -n install.sh"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "js-yaml": "^4.1.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "license": "MIT",
+  "author": "pai535Huang",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pai535Huang/dsh-superpower.git"
+  },
+  "homepage": "https://github.com/pai535Huang/dsh-superpower#readme",
+  "bugs": {
+    "url": "https://github.com/pai535Huang/dsh-superpower/issues"
+  }
+}

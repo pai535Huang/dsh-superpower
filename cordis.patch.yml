@@ -1,0 +1,5 @@
+# DSH bundle layer: mount the host plugin that keeps the Superpowers preset
+# synchronized under $DSH_HOME/.agent-presets/superpowers.
+- insert:
+    - id: superpowers-preset-sync
+      name: dsh-superpower

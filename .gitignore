@@ -1,0 +1,41 @@
+# Dependencies and upstream working copy
+node_modules/
+.superpowers-src/
+
+# AI coding agent local state/cache
+**/.codex/
+**/.agents/
+**/.claude/
+**/.cursor/
+**/.gemini/
+**/.opencode/
+**/.continue/
+**/.windsurf/
+**/.cline/
+**/.roo/
+**/.amazonq/
+**/.qodo/
+
+# Aider local artifacts
+**/.aider*
+**/.aider.chat.history.md
+**/.aider.tags.cache.*
+
+# Agent-generated plans and specifications
+/docs/superpowers/
+
+# GitHub Copilot artifacts; keep .github/workflows/
+/.github/copilot-instructions.md
+/.github/instructions/
+/.github/prompts/
+
+# Tool-specific root files
+/.cursorrules
+/.windsurfrules
+/.roomodes
+/.rooignore
+
+# AI coding agent instruction files
+/AGENTS.md
+/CLAUDE.md
+/GEMINI.md
