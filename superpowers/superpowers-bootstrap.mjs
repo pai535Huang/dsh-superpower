@@ -26,11 +26,97 @@
  * Subagents are skipped (delegationDepth > 0): a dispatched worker should just
  * do its task. The injected body also carries upstream's <SUBAGENT-STOP> as a
  * backstop.
+ *
+ * ── IMPORTS: `node:` BUILTINS ONLY ──────────────────────────────────────────
+ * This file is loaded as a PRESET-RELATIVE row (`name: ./superpowers-bootstrap.mjs`).
+ * `dsh-agent-presets` redirects bare specifiers named in composition ROWS to the
+ * harness install, but a relative row's own `import` statements go through
+ * Node's ordinary ESM resolution, which starts at this file's directory —
+ * `$DSH_HOME/.agent-presets/superpowers/` — and walks up through `$HOME`,
+ * never reaching the harness's `node_modules`. A single
+ * `import … from '@deepseek-ai/dsh-…'` therefore throws ERR_MODULE_NOT_FOUND,
+ * which fails the ROW, which fails the whole preset mount: the roster still
+ * lists the preset, but every attempt to select it is rejected and the GUI
+ * silently falls back to the default preset. Keep the `<skill_content>`
+ * renderer below inlined and never add a package import here.
  */
-import { renderSkillContent } from '@deepseek-ai/dsh-skill'
+import { randomUUID } from 'node:crypto'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'superpowers-bootstrap'
+
+/**
+ * Cordis requires a declared `inject` before `ctx.skills` may be read; an
+ * undeclared service access throws `cannot get property "skills" without
+ * inject`. The registry lives in the host composition and `tool-skill` — the
+ * row that publishes the `skill` tool for this same preset — injects it too, so
+ * requiring it here adds no new failure mode to the mount.
+ */
+export const inject = ['skills']
+
+/** Escape a value embedded in a `<skill_content>` attribute. */
+function escapeAttr(value) {
+  return String(value).replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;')
+}
+
+/** Escape model-facing prose embedded inside skill markup. */
+function escapeText(value) {
+  return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+}
+
+/** The `<skill_resources>` lines for one skill's resource base. */
+function renderResourceHint(skill) {
+  const base = skill.resourceBase
+  if (base === undefined || base === null) {
+    return [
+      `Resources for this skill are managed by provider "${escapeText(skill.provider ?? 'unknown')}".`,
+      'Load referenced resources only as needed.',
+    ]
+  }
+  switch (base.kind) {
+    case 'directory':
+      return [
+        `Base directory for this skill: ${escapeText(base.path)}`,
+        'Resolve relative paths mentioned by this skill against the base directory before using them. Load referenced resources only as needed.',
+      ]
+    case 'url':
+      return [
+        `Base URL for this skill: ${escapeText(base.url)}`,
+        'Resolve relative URLs mentioned by this skill against the base URL before using them. Load referenced resources only as needed.',
+      ]
+    case 'opaque':
+      return [
+        `Resources for this skill: ${escapeText(base.description)}`,
+        'Load referenced resources only as needed.',
+      ]
+    default:
+      return ['Load referenced resources only as needed.']
+  }
+}
+
+/**
+ * Render one loaded skill in the harness's canonical model-facing shape.
+ *
+ * Deliberately a local copy of `renderSkillContent` from
+ * `@deepseek-ai/dsh-skill`: see the import note at the top of this file — a
+ * package import here would break the preset mount outright. The block shape is
+ * the contract (`<skill_content>` / `<skill_resources>` / `<skill_instructions>`),
+ * so the model reads an injected skill exactly as it reads one returned by the
+ * `skill` tool.
+ */
+function renderSkillContent(skill) {
+  return [
+    `<skill_content name="${escapeAttr(skill.name ?? 'using-superpowers')}">`,
+    '<skill_resources>',
+    ...renderResourceHint(skill),
+    '</skill_resources>',
+    '',
+    '<skill_instructions>',
+    skill.content,
+    '</skill_instructions>',
+    '</skill_content>',
+  ].join('\n')
+}
 
 /** Upstream's SessionStart envelope, adapted only for DSH's `skill` tool. */
 function envelope(body) {
@@ -48,6 +134,15 @@ export function apply(ctx) {
   /** Sessions that already carry the bootstrap in the current epoch. */
   const injected = new Set()
 
+  /** Warn without ever letting a missing logger break the session. */
+  const warn = (message) => {
+    try {
+      ctx.logger?.warn(message)
+    } catch {
+      // Logger unavailable — ignore.
+    }
+  }
+
   ctx.on('session/event', (session, event) => {
     // Compaction collapses the surface; the bootstrap must come back after it.
     if (event.type === 'compaction/end') injected.delete(session.id)
@@ -56,6 +151,7 @@ export function apply(ctx) {
   ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
     const decision = await next()
     try {
+      if (decision?.kind === 'reject') return decision
       const session = agent?.session
       if (session === undefined) return decision
       // A dispatched subagent does its own task; skip the workflow bootstrap.
@@ -69,18 +165,14 @@ export function apply(ctx) {
         signal,
       })
       if (skill?.content == null) {
-        try {
-          ctx.logger?.warn('superpowers-bootstrap: using-superpowers skill not found; skipping')
-        } catch {
-          // Logger unavailable — ignore.
-        }
+        warn('superpowers-bootstrap: using-superpowers skill not found; skipping')
         return decision
       }
 
       return {
         ...decision,
         messages: [...(decision.messages ?? []), {
-          id: `superpowers-bootstrap-${session.id}`,
+          id: randomUUID(),
           role: 'user',
           content: [{ type: 'text', text: envelope(renderSkillContent(skill)) }],
           source: { kind: 'skill-invocation', name: 'using-superpowers', form: 'instructions' },
@@ -88,11 +180,7 @@ export function apply(ctx) {
       }
     } catch (error) {
       // A bootstrap bug must never hurt the session: skip it.
-      try {
-        ctx.logger?.warn(`superpowers-bootstrap: injection failed, skipping: ${String(error?.message ?? error)}`)
-      } catch {
-        // Logger unavailable — ignore.
-      }
+      warn(`superpowers-bootstrap: injection failed, skipping: ${String(error?.message ?? error)}`)
       return decision
     }
   })
