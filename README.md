@@ -93,6 +93,8 @@ GitHub Actions 会在每次 push 和 pull request 时，分别使用 Node.js 20 
 
 这些检查验证的是插件代码和运行机制，不是模型生成代码的实际质量。要比较 Agent 效果，还需要固定模型和任务集进行独立的行为评测（eval）。
 
+上游对 harness 移植的硬性验收（全新会话发 "Let's make a react todo list"，`brainstorming` 必须先于任何代码自动触发）已通过并留档：见 [`docs/acceptance-test.md`](docs/acceptance-test.md)（DSH headless + superpowers preset，deepseek-v4-pro）。
+
 ## 工作原理（与「精确的技能使用检测」）
 
 Superpowers 的技能不会自己触发——上游靠 SessionStart hook 把 `using-superpowers` 技能内容注入到会话开头，让模型在动手前先检查是否有匹配技能。这个仓库用 `superpowers-bootstrap.mjs` 复刻了这一步：
