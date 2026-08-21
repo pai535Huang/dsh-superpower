@@ -58,7 +58,30 @@ const meta = yaml.load(readFileSync(join(PRESET, 'preset.yml'), 'utf8'), { schem
 if (typeof meta?.name === 'string' && typeof meta?.description === 'string') ok(`name=${meta.name}`)
 else fail(`preset.yml needs string name + description: ${JSON.stringify(meta)}`)
 
-// 3. Skills
+// 3. Preset-relative plugin rows must import `node:` builtins only.
+//
+// `dsh-agent-presets` redirects bare specifiers named in composition ROWS to the
+// harness install, but a relative row's own `import` statements resolve through
+// Node from the INSTALLED preset directory ($DSH_HOME/.agent-presets/<id>/),
+// whose upward `node_modules` walk never reaches the harness. One bare
+// `@deepseek-ai/dsh-*` import there throws ERR_MODULE_NOT_FOUND, fails the row,
+// and fails the whole mount — the preset stays listed but cannot be selected.
+console.log('preset-relative plugin rows:')
+const relativeRows = (Array.isArray(rows) ? rows : [])
+  .map((row) => row?.name)
+  .filter((name) => typeof name === 'string' && name.startsWith('.'))
+if (relativeRows.length === 0) ok('no relative rows')
+for (const rowName of relativeRows) {
+  const file = join(PRESET, rowName)
+  if (!existsSync(file)) { fail(`row "${rowName}" has no file at ${file}`); continue }
+  const source = readFileSync(file, 'utf8')
+  const specifiers = [...source.matchAll(/^\s*(?:import|export)[^'"\n]*from\s*['"]([^'"]+)['"]/gm)].map((m) => m[1])
+  const bare = specifiers.filter((s) => !s.startsWith('node:') && !s.startsWith('.') && !s.startsWith('/'))
+  if (bare.length > 0) fail(`${rowName} imports bare specifier(s) the installed preset cannot resolve: ${bare.join(', ')}`)
+  else ok(`${rowName} imports node: builtins only`)
+}
+
+// 4. Skills
 console.log('bundled skills:')
 const skillsDir = join(PRESET, 'skills')
 const dirs = readdirSync(skillsDir).filter((d) => existsSync(join(skillsDir, d, 'SKILL.md')))
