@@ -23,7 +23,7 @@
  */
 import { cp, readdir, readFile, writeFile, rm, mkdir, stat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { join, basename, resolve } from 'node:path'
+import { join, basename, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { SUPERPOWERS_SKILLS } from './skill-names.mjs'
 
@@ -57,6 +57,68 @@ for (const name of entries) {
   await cp(srcDir, join(OUT, name), { recursive: true })
   copied.push(name)
 }
+
+// ── local overlays ──────────────────────────────────────────────────────────
+// DSH-specific additions that upstream does not ship (the DSH tool mapping
+// reference) live in `./overlays/`, merged into the copied tree after the
+// upstream copy. Overlays may only ADD files: an overlay that would overwrite
+// an upstream file is a drift bug and fails the build, so the checked-in
+// skill tree can never silently diverge from upstream.
+
+const OVERLAYS = fileURLToPath(new URL('./overlays/', import.meta.url))
+
+async function mergeOverlayEntry(src, dest, rel) {
+  const info = await stat(src)
+  if (info.isDirectory()) {
+    for (const entry of await readdir(src, { withFileTypes: true })) {
+      await mergeOverlayEntry(join(src, entry.name), join(dest, entry.name), `${rel}/${entry.name}`)
+    }
+    return
+  }
+  if (existsSync(dest)) {
+    console.error(`error: overlay ${rel} already exists in the built tree; overlays may only add new files (never replace an upstream skill file)`)
+    process.exit(1)
+  }
+  await mkdir(dirname(dest), { recursive: true })
+  await cp(src, dest)
+}
+
+async function mergeOverlays() {
+  if (!existsSync(OVERLAYS)) return
+  for (const entry of await readdir(OVERLAYS, { withFileTypes: true })) {
+    if (!(await existsSync(join(OUT, entry.name, 'SKILL.md')))) {
+      console.warn(`warn: skipping overlay ${entry.name}: no such skill in the built tree`)
+      continue
+    }
+    await mergeOverlayEntry(join(OVERLAYS, entry.name), join(OUT, entry.name), entry.name)
+  }
+}
+await mergeOverlays()
+
+// ── DSH platform pointer ────────────────────────────────────────────────────
+// The one edit a port may make to a SKILL.md (upstream's porting guide
+// sanctions exactly this): add the DSH line to using-superpowers' Platform
+// Adaptation pointer list. Idempotent; warns if upstream moved the anchor so
+// the pointer is never silently dropped.
+
+const PLATFORM_POINTER = '- DeepSeek Harness: `references/dsh-tools.md`'
+const PLATFORM_ANCHOR = /^- Hermes Agent: `references\/hermes-tools\.md`$/
+
+async function patchPlatformPointer() {
+  const file = join(OUT, 'using-superpowers', 'SKILL.md')
+  if (!existsSync(file)) return
+  const original = await readFile(file, 'utf8')
+  if (original.includes(PLATFORM_POINTER)) return
+  const lines = original.split('\n')
+  const idx = lines.findIndex((line) => PLATFORM_ANCHOR.test(line))
+  if (idx === -1) {
+    console.warn('warn: Platform Adaptation anchor (Hermes Agent line) not found; DSH pointer not inserted')
+    return
+  }
+  lines.splice(idx + 1, 0, PLATFORM_POINTER)
+  await writeFile(file, lines.join('\n'))
+}
+await patchPlatformPointer()
 
 /** Rewrite `superpowers:<name>` -> `<name>` across one file's text. */
 async function rewrite(file) {

@@ -13,6 +13,7 @@ Superpowers 是一套由 14 个 `SKILL.md` 技能组成的开发方法论（brai
 ├── install.sh                    # 手动安装回退
 ├── cordis.patch.yml              # DSH bundle patch：挂载宿主同步插件
 ├── lib/index.js                  # 宿主插件：启动时幂等同步 preset
+├── overlays/                     # DSH 本地覆盖（dsh-tools.md），构建时并入技能树
 ├── scripts/                      # 手动同步与只读安装验证
 ├── test/                         # build/install/bootstrap/validate 自动测试
 ├── package.json                  # 测试、校验与统一检查命令
@@ -20,7 +21,7 @@ Superpowers 是一套由 14 个 `SKILL.md` 技能组成的开发方法论（brai
 ├── superpowers/                  # ← 这是要安装的 preset
 │   ├── preset.yml                # 显示名与描述
 │   ├── agent.cordis.yml          # 组合（标准模式 + bootstrap + 打包技能）
-│   ├── superpowers-bootstrap.mjs # 会话启动注入 using-superpowers 规则
+│   ├── superpowers-bootstrap.mjs # 会话启动注入 using-superpowers 规则 + DSH 工具映射
 │   └── skills/                   # 14 个技能（SKILL.md + references/scripts/assets）
 └── .superpowers-src/             # 上游浅克隆（仅用于重新生成技能，非运行依赖）
 ```
@@ -92,11 +93,13 @@ GitHub Actions 会在每次 push 和 pull request 时，分别使用 Node.js 20 
 
 这些检查验证的是插件代码和运行机制，不是模型生成代码的实际质量。要比较 Agent 效果，还需要固定模型和任务集进行独立的行为评测（eval）。
 
+上游对 harness 移植的硬性验收（全新会话发 "Let's make a react todo list"，`brainstorming` 必须先于任何代码自动触发）已通过并留档：见 [`docs/acceptance-test.md`](docs/acceptance-test.md)（DSH headless + superpowers preset，deepseek-v4-pro）。
+
 ## 工作原理（与「精确的技能使用检测」）
 
 Superpowers 的技能不会自己触发——上游靠 SessionStart hook 把 `using-superpowers` 技能内容注入到会话开头，让模型在动手前先检查是否有匹配技能。这个仓库用 `superpowers-bootstrap.mjs` 复刻了这一步：
 
-1. **会话启动注入（复刻上游 SessionStart hook）**：每个顶层会话的第一个请求里，注入 `<EXTREMELY_IMPORTANT>` 包裹的 `using-superpowers` 完整内容（compaction 之后再注入一次），正文按上游原文要求「在回答/动手前先调用相关技能，包括澄清问题、探索代码库之前」。bootstrap 正文从技能注册表实时读取并复用 DSH 的 `<skill_content>` 渲染，因此注入内容始终与 `using-superpowers/SKILL.md` 一致。
+1. **会话启动注入（复刻上游 SessionStart hook）**：每个顶层会话的第一个请求里，注入 `<EXTREMELY_IMPORTANT>` 包裹的 `using-superpowers` 完整内容（compaction 之后再注入一次），正文按上游原文要求「在回答/动手前先调用相关技能，包括澄清问题、探索代码库之前」。bootstrap 正文从技能注册表实时读取并复用 DSH 的 `<skill_content>` 渲染，因此注入内容始终与 `using-superpowers/SKILL.md` 一致；其后追加同目录 `references/dsh-tools.md` 的 DSH 工具映射（同一文件、单一来源，文件缺失时静默降级，不影响会话）。
 2. **强制技能使用（上游「1% 就调用」规则）**：逐字保留上游逻辑——「只要 1% 可能相关就必须调用；技能适用就必须用，没有商量余地」，以及 Red Flags 理性化清单和「process 技能优先」的优先级。加载后若发现不适用再放下，而不是跳过检查。
 3. **按 description 路由**：每个技能 frontmatter 的 `description` 就是触发条件（例如 `brainstorming` 只在「写代码前」、`systematic-debugging` 只在「遇到 bug 前」）。目录只展示 name + description，模型据此路由。
 4. **子代理跳过**：`delegationDepth > 0` 的子代理不注入 bootstrap（正文里也保留 `<SUBAGENT-STOP>` 兜底），避免每个被派发的子代理都重新跑一遍完整流程。
@@ -109,8 +112,9 @@ Superpowers 的技能不会自己触发——上游靠 SessionStart hook 把 `us
 
 - 技能正文、frontmatter 的 `name`/`description` 逐字保留；只做命名空间改写。
 - 不保留 Claude Code / Cursor / Codex 等专属 hook 与 marketplace 清单，只适配 DSH 的 `skill-filesystem` + `tool-skill` 机制。
-- `using-superpowers` 里的平台参考文件保留在 `skills/using-superpowers/references/` 下，DSH 走标准 `skill` 工具 + subagent 工具，无需额外平台映射。
-- 仅有的内容改动是 `superpowers:<name>` → `<name>` 命名空间改写（DSH 用裸名寻址）；技能 frontmatter 与正文的「1% 就调用」「技能适用就必须用」等行为规则全部逐字保留。
+- **DSH 工具映射**：上游给每个 harness 配一份工具映射参考（如 `codex-tools.md`）。本仓库在 `overlays/using-superpowers/references/dsh-tools.md` 维护 DSH 的映射（skill 裸名调用、subagent 生命周期、文件沙箱升级、后台 job、plan mode 等），构建时并入技能树，并由 bootstrap 在每次会话启动时随 `using-superpowers` 一起注入。
+- **Platform Adaptation 指针**：上游唯一放行的 SKILL.md 编辑——`build.mjs` 在 `using-superpowers/SKILL.md` 的 Platform Adaptation 列表里幂等插入 `- DeepSeek Harness: references/dsh-tools.md` 一行。
+- 除此之外仅有的内容改动是 `superpowers:<name>` → `<name>` 命名空间改写（DSH 用裸名寻址）；技能 frontmatter 与正文的「1% 就调用」「技能适用就必须用」等行为规则全部逐字保留。
 
 ## 技能清单
 
