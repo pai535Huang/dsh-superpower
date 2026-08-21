@@ -41,6 +41,8 @@
  * renderer below inlined and never add a package import here.
  */
 import { randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'superpowers-bootstrap'
@@ -119,13 +121,16 @@ function renderSkillContent(skill) {
 }
 
 /** Upstream's SessionStart envelope, adapted only for DSH's `skill` tool. */
-function envelope(body) {
+function envelope(body, toolMapping = '') {
+  const mappingBlock = toolMapping === ''
+    ? ''
+    : `\n\nBelow is the DeepSeek Harness tool mapping for these skills (using-superpowers/references/dsh-tools.md):\n\n${toolMapping}`
   return `<EXTREMELY_IMPORTANT>
 You have superpowers.
 
 Below is the full content of your 'using-superpowers' skill — your introduction to using skills. For all other skills, use the \`skill\` tool:
 
-${body}
+${body}${mappingBlock}
 </EXTREMELY_IMPORTANT>`
 }
 
@@ -169,12 +174,27 @@ export function apply(ctx) {
         return decision
       }
 
+      // Append the DSH tool mapping shipped as a reference file next to the
+      // skill, so the harness-specific mapping rides the same bootstrap and
+      // has a single source of truth. Fail open: a missing or unreadable
+      // mapping must never break the session.
+      let toolMapping = ''
+      const base = skill.resourceBase
+      if (base?.kind === 'directory') {
+        const mappingFile = join(base.path, 'references', 'dsh-tools.md')
+        try {
+          toolMapping = await readFile(mappingFile, 'utf8')
+        } catch (error) {
+          warn(`superpowers-bootstrap: ${mappingFile} unreadable; injecting without the DSH tool mapping`)
+        }
+      }
+
       return {
         ...decision,
         messages: [...(decision.messages ?? []), {
           id: randomUUID(),
           role: 'user',
-          content: [{ type: 'text', text: envelope(renderSkillContent(skill)) }],
+          content: [{ type: 'text', text: envelope(renderSkillContent(skill), toolMapping) }],
           source: { kind: 'skill-invocation', name: 'using-superpowers', form: 'instructions' },
         }],
       }

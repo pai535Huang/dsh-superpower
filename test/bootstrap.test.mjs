@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { cp, mkdir } from 'node:fs/promises'
+import { cp, mkdir, writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -106,4 +106,54 @@ test('bootstrap fails open when the routing skill is unavailable', async (t) => 
   const result = await runPreStep(handlers.get('agent/pre-step'), session)
   assert.deepEqual(result, { messages: [] })
   assert.match(warnings[0], /using-superpowers skill not found/)
+})
+
+test('bootstrap appends the DSH tool mapping from the skill resource base', async (t) => {
+  const root = await temporaryDirectory(t, 'dsh-superpower-bootstrap-mapping')
+  const references = join(root, 'skills', 'using-superpowers', 'references')
+  await mkdir(references, { recursive: true })
+  await writeFile(join(references, 'dsh-tools.md'), 'DSH-TOOLS-MARKER: use the skill tool with bare names.\n')
+
+  const { apply } = await loadBootstrap(t)
+  const skill = {
+    name: 'using-superpowers',
+    provider: 'filesystem',
+    content: 'routing rules',
+    resourceBase: { kind: 'directory', path: join(root, 'skills', 'using-superpowers') },
+  }
+  const { ctx, handlers } = harness(skill)
+  apply(ctx)
+  const session = { id: 'top-level', header: { cwd: '/tmp/project', delegationDepth: 0 } }
+
+  const result = await runPreStep(handlers.get('agent/pre-step'), session)
+  const text = result.messages[0].content[0].text
+  assert.match(text, /<skill_instructions>\nrouting rules\n<\/skill_instructions>/)
+  assert.match(text, /DSH-TOOLS-MARKER: use the skill tool with bare names\./)
+  assert.ok(
+    text.indexOf('DSH-TOOLS-MARKER') < text.lastIndexOf('</EXTREMELY_IMPORTANT>'),
+    'tool mapping must travel inside the EXTREMELY_IMPORTANT envelope',
+  )
+})
+
+test('bootstrap still injects when the tool mapping file is missing', async (t) => {
+  const root = await temporaryDirectory(t, 'dsh-superpower-bootstrap-mapping-missing')
+  const skillDir = join(root, 'skills', 'using-superpowers')
+  await mkdir(skillDir, { recursive: true })
+
+  const { apply } = await loadBootstrap(t)
+  const skill = {
+    name: 'using-superpowers',
+    provider: 'filesystem',
+    content: 'routing rules',
+    resourceBase: { kind: 'directory', path: skillDir },
+  }
+  const { ctx, handlers, warnings } = harness(skill)
+  apply(ctx)
+  const session = { id: 'top-level', header: { cwd: '/tmp/project', delegationDepth: 0 } }
+
+  const result = await runPreStep(handlers.get('agent/pre-step'), session)
+  const text = result.messages[0].content[0].text
+  assert.match(text, /<skill_instructions>\nrouting rules\n<\/skill_instructions>/)
+  assert.doesNotMatch(text, /DSH-TOOLS-MARKER/)
+  assert.ok(warnings.some((w) => /dsh-tools\.md/.test(w)))
 })
