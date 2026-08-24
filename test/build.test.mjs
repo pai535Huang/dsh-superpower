@@ -89,6 +89,32 @@ test('build merges overlay references and adds the DSH platform pointer idempote
   assert.equal(rebuilt.match(/DeepSeek Harness: `references\/dsh-tools\.md`/g)?.length, 1)
 })
 
+test('build ships DSH guidance for asking the user and approval gates', async () => {
+  // Every session injects this reference, so the skills' human-partner
+  // checkpoints (brainstorming Q&A plus design/spec approval, writing-plans
+  // handoff) must be mapped to DSH's question and plan-mode tools.
+  const overlay = await readFile(
+    join(repoRoot, 'overlays', 'using-superpowers', 'references', 'dsh-tools.md'),
+    'utf8',
+  )
+  assert.match(overlay, /^## Asking the user and approvals/m)
+  assert.match(overlay, /`ask_user_question`/)
+  assert.match(overlay, /not available on this harness/i)
+  assert.match(overlay, /never offer/i)
+})
+
+test('generated platform reference stays in sync with the overlay', async () => {
+  const overlay = await readFile(
+    join(repoRoot, 'overlays', 'using-superpowers', 'references', 'dsh-tools.md'),
+    'utf8',
+  )
+  const generated = await readFile(
+    join(repoRoot, 'superpowers', 'skills', 'using-superpowers', 'references', 'dsh-tools.md'),
+    'utf8',
+  )
+  assert.equal(generated, overlay)
+})
+
 test('build refuses an overlay that would overwrite a copied skill file', async (t) => {
   const root = await temporaryDirectory(t, 'dsh-superpower-build-overlay-conflict')
   const upstream = join(root, 'upstream')
