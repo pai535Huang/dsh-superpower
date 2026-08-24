@@ -112,7 +112,7 @@ Superpowers 的技能不会自己触发——上游靠 SessionStart hook 把 `us
 
 - 技能正文、frontmatter 的 `name`/`description` 逐字保留；只做命名空间改写。
 - 不保留 Claude Code / Cursor / Codex 等专属 hook 与 marketplace 清单，只适配 DSH 的 `skill-filesystem` + `tool-skill` 机制。
-- **DSH 工具映射**：上游给每个 harness 配一份工具映射参考（如 `codex-tools.md`）。本仓库在 `overlays/using-superpowers/references/dsh-tools.md` 维护 DSH 的映射（skill 裸名调用、subagent 生命周期、文件沙箱升级、后台 job、plan mode 等），构建时并入技能树，并由 bootstrap 在每次会话启动时随 `using-superpowers` 一起注入。
+- **DSH 工具映射**：上游给每个 harness 配一份工具映射参考（如 `codex-tools.md`）。本仓库在 `overlays/using-superpowers/references/dsh-tools.md` 维护 DSH 的映射（skill 裸名调用、subagent 生命周期、文件沙箱升级、后台 job、问用户与审批门槛——`ask_user_question` / `exit_plan_mode`——plan mode 等），构建时并入技能树，并由 bootstrap 在每次会话启动时随 `using-superpowers` 一起注入。
 - **Platform Adaptation 指针**：上游唯一放行的 SKILL.md 编辑——`build.mjs` 在 `using-superpowers/SKILL.md` 的 Platform Adaptation 列表里幂等插入 `- DeepSeek Harness: references/dsh-tools.md` 一行。
 - 除此之外仅有的内容改动是 `superpowers:<name>` → `<name>` 命名空间改写（DSH 用裸名寻址）；技能 frontmatter 与正文的「1% 就调用」「技能适用就必须用」等行为规则全部逐字保留。
 

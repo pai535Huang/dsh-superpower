@@ -90,10 +90,37 @@ objective is actually achieved.
 list. Keep at least one item `in_progress` while work remains and mark
 items complete the moment they finish.
 
+## Asking the user and approvals
+
+Skills make their human-partner checkpoints explicit — brainstorming's
+clarifying questions, design approval and spec review gate;
+writing-plans' execution-handoff choice; executing-plans' "raise
+concerns before starting". On DSH those are real stopping points:
+never answer your own question, never proceed past a gate.
+
+- **Structured questions:** use `ask_user_question` whenever a question
+  can be answered from options — brainstorming's "prefer multiple
+  choice questions", writing-plans' "which approach?". One call is one
+  question: split multi-topic questions into separate turns.
+- **Open-ended questions:** end your turn with the question in plain
+  text and wait. The user's next message answers it.
+- **Approval gates:** after presenting a design in chat, or writing a
+  spec/plan document, STOP and wait for an explicit yes — or change
+  requests. In plan mode, submit the complete plan with
+  `exit_plan_mode`; the user reviews and approves it or sends it back.
+  Run brainstorming before entering plan mode.
+- **Never self-approve.** "I'll assume X and proceed" skips the gate. A
+  decision the user might want to make differently is a question to
+  ask, not a call to make.
+- **No Visual Companion here.** Brainstorming's Visual Companion is a
+  browser tool that is not available on this harness; never offer to
+  open one, and never start a companion server — treat visual
+  questions as plain text questions.
+
 ## Plan mode
 
 In plan mode, explore with non-mutating reads and searches, then submit
 the complete plan with `exit_plan_mode` as the only and final tool call
 of that response. Before entering plan mode, run `brainstorming` first
-if you have not already. Use `ask_user_question` for user-owned choices
-or material ambiguity that inspection cannot answer.
+if you have not already. See Asking the user and approvals above for
+the gates that apply throughout the workflow.
