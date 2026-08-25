@@ -5,7 +5,11 @@ name: Auto-merge small PRs
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize, closed]
+    types: [opened, reopened, synchronize]
+  schedule:
+    # 每小时清扫一次已合并 PR 的残留分支（closed 事件对 auto-merge 合并不派发，不能依赖）
+    - cron: '23 * * * *'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -16,7 +20,7 @@ env:
 
 jobs:
   maybe-auto-merge:
-    if: github.event.pull_request.draft == false && github.event.action != 'closed'
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,7 +48,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh pr comment "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --body "🤖 小改动（≤ $SMALL_PR_LINES 行），已开启自动合并：CI 通过后自动合并，合并后分支自动删除。"
+          gh pr comment "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --body "🤖 小改动（≤ $SMALL_PR_LINES 行），已开启自动合并：CI 通过后自动合并，残留分支由定时清扫（≤1 小时）删除。"
           gh pr merge "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --auto --merge
         continue-on-error: true
 
@@ -56,13 +60,18 @@ jobs:
           gh pr comment "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --body "📏 改动超过 $SMALL_PR_LINES 行（实际 ${{ steps.size.outputs.total }}），需要人工审阅后合并。"
         continue-on-error: true
 
-  delete-merged-branch:
-    # 合并完成后显式删除远端分支（仓库 delete_branch_on_merge 设置对 auto-merge 并不可靠）
-    if: github.event.action == 'closed' && github.event.pull_request.merged == true
+  prune-merged-branches:
+    # 定时清扫：删除所有已合并 PR 的残留远端分支（≤1 小时延迟，自愈）；workflow_dispatch 可手动触发
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - name: Delete merged branch
+      - name: Delete branches of merged PRs
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh api -X DELETE "repos/${{ github.repository }}/git/refs/heads/${{ github.event.pull_request.head.ref }}" || echo "branch already gone"
+          gh pr list --repo "${{ github.repository }}" --state merged --limit 100 --json headRefName \
+            | python3 -c "import json,sys; [print(p['headRefName']) for p in json.load(sys.stdin)]" \
+            | while read -r BR; do
+                gh api -X DELETE "repos/${{ github.repository }}/git/refs/heads/$BR" >/dev/null 2>&1 \
+                  && echo "deleted $BR" || echo "skip $BR (gone or protected)"
+              done
