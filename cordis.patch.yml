@@ -1,5 +1,8 @@
-# DSH bundle layer: mount the host plugin that keeps the Superpowers preset
-# synchronized under $DSH_HOME/.agent-presets/superpowers.
+# DSH bundle layer: mount the host plugin that registers the Superpowers
+# skills into the global skill layer and restores the session-start bootstrap
+# for any agent whose tool view includes the `skill` tool. The plugin ships no
+# preset; every preset with a skill-loading surface picks the skills up
+# automatically.
 - insert:
-    - id: superpowers-preset-sync
+    - id: dsh-superpower
       name: dsh-superpower

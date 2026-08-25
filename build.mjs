@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * build.mjs — regenerate `superpowers/skills/` from an upstream checkout of
+ * build.mjs — regenerate `skills/` from an upstream checkout of
  * obra/superpowers.
  *
  * Superpowers ships skills in Claude Code's `SKILL.md` layout

@@ -12,8 +12,8 @@ Upstream's new-harness acceptance test (see `.superpowers-src/docs/porting-to-a-
 | Field | Value |
 |---|---|
 | Harness | DeepSeek Harness CLI `0.1.0-rc.8`, profile `headless` ("answer one task and exit") |
-| Preset | `superpowers` @ commit `044c38b` (this repo), installed via `install.sh` |
-| Preset mounting | headless has no agent-preset roster, so the preset's two contribution rows — `superpowers-bootstrap` (absolute path to the installed `superpowers-bootstrap.mjs`) and the `skill-filesystem` `customSkillDirs` override pointing at the installed `skills/` — were applied with a `--patch` overlay. Same rows, same files, same resolution rules the preset composition adds on the web profile. |
+| Preset | `standard` (no superpowers-specific preset exists anymore) |
+| Plugin | host plugin from this repo, installed into the profile (bundle patch mounts `dsh-superpower`) |
 | Workspace | empty scratch directory (no repo, no existing code) |
 | Model | `deepseek-v4-pro`, `reasoningEffort: max` |
 | Prompt | exactly `Let's make a react todo list` |

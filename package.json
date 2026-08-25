@@ -2,27 +2,24 @@
   "name": "dsh-superpower",
   "version": "0.1.0",
   "private": true,
-  "description": "DeepSeek Harness preset adapter for obra/superpowers",
+  "description": "DeepSeek Harness plugin that registers the obra/superpowers skills globally and restores the session-start discipline",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
     "./package.json": "./package.json",
-    "./superpowers/*": "./superpowers/*"
+    "./skills/*": "./skills/*"
   },
   "files": [
     "lib",
-    "scripts",
-    "superpowers",
+    "skills",
     "cordis.patch.yml",
     "README.md"
   ],
   "scripts": {
     "test": "node --test test/*.test.mjs",
     "validate": "node validate.mjs",
-    "sync": "node scripts/sync-presets.mjs",
-    "verify": "node scripts/verify-install.mjs",
-    "check": "npm test && npm run validate && bash -n install.sh"
+    "check": "npm test && npm run validate"
   },
   "engines": {
     "node": ">=20"

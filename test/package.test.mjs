@@ -25,13 +25,14 @@ test('package exposes a DSH bundle and packs every runtime file', async (t) => {
     'package.json',
     'cordis.patch.yml',
     'lib/index.js',
-    'scripts/sync-presets.mjs',
-    'scripts/verify-install.mjs',
-    'superpowers/agent.cordis.yml',
-    'superpowers/preset.yml',
-    'superpowers/superpowers-bootstrap.mjs',
-    'superpowers/skills/using-superpowers/SKILL.md',
+    'lib/bootstrap.mjs',
+    'lib/skills.mjs',
+    'skills/manifest.json',
+    'skills/using-superpowers/SKILL.md',
   ]) assert.ok(files.has(required), `packed artifact is missing ${required}`)
   assert.equal([...files].some((path) => path.startsWith('test/')), false)
   assert.equal([...files].some((path) => path.startsWith('.superpowers-src/')), false)
+  assert.equal([...files].some((path) => path.startsWith('superpowers/')), false, 'no preset artifacts in the package')
+  assert.equal([...files].some((path) => path.startsWith('scripts/')), false, 'no sync/verify scripts in the package')
+  assert.equal([...files].some((path) => path === 'install.sh'), false, 'no install.sh in the package')
 })

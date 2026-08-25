@@ -1,2 +1,0 @@
-name: Superpowers
-description: Standard coding agent plus obra/superpowers skills (brainstorming, test-driven-development, systematic-debugging, subagent-driven-development, …). A session-start bootstrap triggers the matching skill by exact description match.
