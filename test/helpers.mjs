@@ -16,7 +16,7 @@ export async function copyValidationProject(destination) {
   await mkdir(destination, { recursive: true })
   await cp(join(repoRoot, 'validate.mjs'), join(destination, 'validate.mjs'))
   await cp(join(repoRoot, 'skill-names.mjs'), join(destination, 'skill-names.mjs'))
-  await cp(join(repoRoot, 'superpowers'), join(destination, 'superpowers'), { recursive: true })
+  await cp(join(repoRoot, 'skills'), join(destination, 'skills'), { recursive: true })
   await installLocalJsYamlProxy(destination)
 }
 
