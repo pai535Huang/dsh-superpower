@@ -2,12 +2,12 @@
 
 把 [obra/superpowers](https://github.com/obra/superpowers/)（一套面向编码 Agent 的
 开发方法论：brainstorming、TDD、systematic-debugging、subagent-driven-development 等
-14 个 `SKILL.md` 技能）接入 DeepSeek Harness，**不再以 Agent preset 形式交付**。
+14 个 `SKILL.md` 技能）接入 DeepSeek Harness。
 
 这个插件是一个 **host 组合行**（bundle patch 挂载）：它把打包的 14 个技能注册进 DSH
 技能注册表的**全局层**，并在每个具有 `skill` 工具的会话开头注入 `using-superpowers`
 纪律（"1% 规则"）。任何预设（standard / code / cordis / 自定义预设）只要提供了技能
-加载面，就会自动看到这些技能——**不需要切换或选择某个 superpowers 预设**。
+加载面，就会自动看到这些技能。
 
 ## 安装
 
@@ -15,13 +15,24 @@
 dsh plugin --profile <name> add github:pai535Huang/dsh-superpower
 ```
 
-重启/重启 profile 后，新会话即可使用。没有任何预设选择步骤。
+重启 profile 后，新会话即可使用。
 
-> **从旧版本（preset 形态）升级**：插件启动时会自动删除旧的
-> `$DSH_HOME/.agent-presets/superpowers/` 目录（它完全由旧版本维护）。
-> 如果你的 `$DSH_HOME/settings.yaml` 仍把 `agent-presets.default` 设为
-> `superpowers`，请在 GUI（会话预设选择器）或 settings.yaml 中改为
-> **standard** 等其他预设——插件只会警告，不会修改你的设置文件。
+## 迁移说明（从旧 preset 形态升级）
+
+早期版本以 **Agent preset** 形态交付：安装会同步 `$DSH_HOME/.agent-presets/superpowers`，
+使用时需在会话预设选择器切换到 "Superpowers"。此形态已取消：
+
+- 技能对所有具备技能加载面的预设自动生效，**不需要（也无法）再选择 superpowers 预设**。
+- 插件启动时会自动删除旧的 `$DSH_HOME/.agent-presets/superpowers/` 目录
+  （它完全由旧版本维护）。
+- 如果 `$DSH_HOME/settings.yaml` 仍把 `agent-presets.default` 设为 `superpowers`，
+  请在 GUI（会话预设选择器）或 settings.yaml 中改为 **standard** 等其他预设——
+  插件只会警告，不会修改你的设置文件。
+- **同名技能遮蔽语义变化**：旧形态下捆绑技能（preset 层，rank 300）压过用户根
+  （rank 400/500）的同名技能；新版全局层是最远层，项目/用户技能根里的同名技能会
+  **遮蔽捆绑版**——这是有意的：用户意图优先。
+
+注入频率语义不变：每个顶层会话首请求注入一次，compaction 后重注一次，子代理跳过。
 
 ## 行为
 
