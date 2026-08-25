@@ -1,0 +1,57 @@
+name: Auto-merge small PRs
+
+# 小改动（≤ 50 行 diff）自动合并并删除分支；大改动留给人工。
+# 阈值修改：把下面 SMALL_PR_LINES 改掉即可。
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  SMALL_PR_LINES: 50
+
+jobs:
+  maybe-auto-merge:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Measure diff size (base...head)
+        id: size
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          git fetch --depth=1 origin "$BASE" "$HEAD"
+          TOTAL=$(git diff --numstat "$BASE" "$HEAD" | awk '{a+=$1; d+=$2} END {print a+d}')
+          TOTAL=${TOTAL:-0}
+          echo "total=$TOTAL" >> "$GITHUB_OUTPUT"
+          echo "diff size: $TOTAL lines (base=$BASE head=$HEAD)"
+          if [ "$TOTAL" -le "$SMALL_PR_LINES" ]; then
+            echo "is-small=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is-small=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Enable auto-merge for small PRs
+        if: steps.size.outputs.is-small == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --body "🤖 小改动（≤ $SMALL_PR_LINES 行），已开启自动合并：CI 通过后自动合并（合并后分支由仓库设置自动删除）。"
+          gh pr merge "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --auto --merge
+        continue-on-error: true
+
+      - name: Remind on larger PRs
+        if: steps.size.outputs.is-small == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --body "📏 改动超过 $SMALL_PR_LINES 行（实际 ${{ steps.size.outputs.total }}），需要人工审阅后合并。"
+        continue-on-error: true
