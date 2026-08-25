@@ -43,18 +43,40 @@ session — no superpowers-specific preset exists anymore.
 
 | Field | Value |
 |---|---|
-| Harness | (fill: version, profile) |
-| Preset | `standard` |
-| Plugin | dsh-superpower @ (fill: commit) |
-| Workspace | (fill: scratch directory) |
-| Model | (fill: model + reasoningEffort) |
+| Harness | DeepSeek Harness CLI `0.1.1-rc.2`, profile `headless` (one-shot under test: "answer one task and exit") |
+| Preset | none — headless composes `@deepseek-ai/dsh-base` + `@deepseek-ai/dsh-headless` directly (host `tool-skill` + `skill-filesystem` active, so the session has the same skill surface as a `standard` preset session) |
+| Plugin | dsh-superpower @ `4b09a6d` (global-skill-provider worktree), linked into the profile bundle list; DSH_HOME isolated to the workspace (read-only `~/.dsh` workaround) |
+| Workspace | empty scratch directory under the isolated DSH_HOME (`.dsh-acc-home/ws`) |
+| Model | `deepseek-official` / `deepseek-v4-flash` (dump-config default) |
 
 ## Evidence checklist (grep against the raw session record)
 
 | Check | Result |
 |---|---|
-| Bootstrap injected exactly once per session | (fill: `"You have superpowers"` occurrence count) |
-| DSH tool mapping injected with the bootstrap | (fill: match / no match) |
-| `skill` tool invoked before any file mutation | (fill: transcript lines) |
-| Brainstorming triggered before any action | (fill: agent message) |
-| No file creation | (fill: directory listing) |
+| Bootstrap injected exactly once per session | **PASS** — `"You have superpowers"` occurs once (user/message seq=10). |
+| DSH tool mapping injected with the bootstrap | **PASS** — `DeepSeek Harness tool mapping` text is inside the `<EXTREMELY_IMPORTANT>` envelope at seq=10. |
+| Skill catalog present alongside | **PASS** — `<system-reminder>` available_skills at seq=9 (with `brainstorming` description routed by frontmatter). |
+| `skill` tool invoked before any file mutation | **PASS** — tool/call seq=82: `skill { "name": "brainstorming" }`; next actions are read-only (seq=482 `bash ls -la && git status`, seq=484 `glob "**/*"`); zero write/edit tool calls. |
+| Brainstorming triggered before any action | **PASS** — the agent loaded `brainstorming` first, then classified the task and asked a clarifying question instead of writing code. |
+| No file creation | **PASS** — workspace listing: empty (`ls -la` → only `.`/`..`; `glob "**/*"` → "No files found"). |
+
+## Recorded transcript (one-shot run 2026-08-26, commit 4b09a6d)
+
+The session record (`session-26807a3c-…/session.jsonl.zstd`) shows, in order:
+
+```
+seq=7   user/message: "Let's make a react todo list"
+seq=9   user/message: <system-reminder> skill catalog (available_skills … brainstorming …)
+seq=10  user/message: <EXTREMELY_IMPORTANT> … You have superpowers. …
+        (bootstrap: using-superpowers full content + DSH tool mapping)
+seq=82  tool/call:    skill { "name": "brainstorming" }
+seq=83  tool/result:  <skill_content name="brainstorming"> … (full body from the registry)
+seq=482 tool/call:    bash { "command": "ls -la && git status …" }   (read-only recon)
+seq=484 tool/call:    glob { "pattern": "**/*" }                     ("No files found")
+final   assistant: classification = architectural; first clarifying question
+        ("What's the context here — learning exercise, portfolio, or daily tool?")
+        — no code, no write/edit.
+```
+
+The final assistant message (printed to stdout by the headless runner) then asks the
+clarifying question and stops, exactly like the original preset-shape acceptance run.
