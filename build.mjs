@@ -25,11 +25,12 @@ import { cp, readdir, readFile, writeFile, rm, mkdir, stat } from 'node:fs/promi
 import { existsSync } from 'node:fs'
 import { join, basename, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import yaml from 'js-yaml'
 import { SUPERPOWERS_SKILLS } from './skill-names.mjs'
 
 const SRC = resolve(process.argv[2] ?? process.env.SUPERWERPOWERS_SRC ?? '.superpowers-src')
 const SRC_SKILLS = join(SRC, 'skills')
-const OUT = fileURLToPath(new URL('./superpowers/skills/', import.meta.url))
+const OUT = fileURLToPath(new URL('./skills/', import.meta.url))
 
 /** Skill names from upstream; used to rewrite exactly the plugin namespace. */
 /** Text file extensions (and extensionless scripts) whose bytes we rewrite. */
@@ -149,3 +150,42 @@ await walk(OUT)
 console.log(`copied ${copied.length} skills from ${SRC_SKILLS}`)
 for (const name of copied.sort()) console.log(`  - ${name}`)
 console.log(`wrote ${OUT}`)
+
+// ── skills/manifest.json ─────────────────────────────────────────────────────
+// The host plugin reads this manifest at boot: it maps each skill's metadata
+// (parsed here with js-yaml) to a byte offset of the body inside SKILL.md, so
+// the runtime needs no YAML parser. Generated LAST, after every rewrite, so the
+// offset refers to the file exactly as shipped.
+
+const manifest = []
+for (const name of copied.sort()) {
+  const file = join(OUT, name, 'SKILL.md')
+  const buffer = await readFile(file)
+  const text = buffer.toString('utf8')
+  if (!text.startsWith('---\n')) throw new Error(`build: ${file} has no frontmatter`)
+  // `\n---\n` is the 5-byte closing delimiter: newline, `---`, newline. Its
+  // byte offset + 5 is the exact body start. (end + 4 would point at the
+  // trailing newline and every body would carry a leading blank line.)
+  const end = buffer.indexOf(Buffer.from('\n---\n'), 4)
+  if (end === -1) throw new Error(`build: ${file} frontmatter is not closed`)
+  const fm = yaml.load(text.slice(4, end + 1))
+  if (typeof fm?.name !== 'string' || typeof fm?.description !== 'string') {
+    throw new Error(`build: ${file} frontmatter needs name + description`)
+  }
+  if (fm.name !== name) throw new Error(`build: ${file} frontmatter name "${fm.name}" != directory name`)
+  const entry = {
+    name: fm.name,
+    description: fm.description,
+    file: `${name}/SKILL.md`,
+    contentOffset: end + 5,
+  }
+  if (typeof fm.whenToUse === 'string') entry.whenToUse = fm.whenToUse
+  const invocation = {
+    modelInvocable: fm['disable-model-invocation'] !== true,
+    userInvocable: fm['user-invocable'] !== false,
+  }
+  if (!(invocation.modelInvocable && invocation.userInvocable)) entry.invocation = invocation
+  manifest.push(entry)
+}
+await writeFile(join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n')
+console.log(`wrote ${join(OUT, 'manifest.json')} (${manifest.length} skills)`)
