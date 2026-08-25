@@ -4,7 +4,7 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 import test from 'node:test'
 
-import { repoRoot, temporaryDirectory } from './helpers.mjs'
+import { repoRoot, temporaryDirectory, installLocalJsYamlProxy } from './helpers.mjs'
 
 test('build copies skill resources and rewrites known Superpowers references', async (t) => {
   const root = await temporaryDirectory(t, 'dsh-superpower-build')
@@ -30,21 +30,35 @@ test('build copies skill resources and rewrites known Superpowers references', a
 
   await cp(join(repoRoot, 'build.mjs'), join(root, 'build.mjs'))
   await cp(join(repoRoot, 'skill-names.mjs'), join(root, 'skill-names.mjs'))
+  await installLocalJsYamlProxy(root)
   const output = execFileSync(process.execPath, ['build.mjs', upstream], {
     cwd: root,
     encoding: 'utf8',
   })
 
-  const builtSkill = await readFile(join(root, 'superpowers', 'skills', 'brainstorming', 'SKILL.md'), 'utf8')
-  const builtGuide = await readFile(join(root, 'superpowers', 'skills', 'brainstorming', 'references', 'guide.md'), 'utf8')
-  const builtBinary = await readFile(join(root, 'superpowers', 'skills', 'brainstorming', 'references', 'asset.bin'))
+  const builtSkill = await readFile(join(root, 'skills', 'brainstorming', 'SKILL.md'), 'utf8')
+  const builtGuide = await readFile(join(root, 'skills', 'brainstorming', 'references', 'guide.md'), 'utf8')
+  const builtBinary = await readFile(join(root, 'skills', 'brainstorming', 'references', 'asset.bin'))
 
   assert.match(output, /copied 1 skills/)
   assert.match(builtSkill, /Use test-driven-development\./)
   assert.match(builtSkill, /superpowers:not-a-real-skill/)
   assert.equal(builtGuide, 'See writing-plans.\n')
   assert.deepEqual(builtBinary, binary)
-  await assert.rejects(readFile(join(root, 'superpowers', 'skills', 'not-a-skill', 'README.md')))
+  await assert.rejects(readFile(join(root, 'skills', 'not-a-skill', 'README.md')))
+  const manifest = JSON.parse(await readFile(join(root, 'skills', 'manifest.json'), 'utf8'))
+  assert.equal(manifest.length, 1)
+  assert.equal(manifest[0].name, 'brainstorming')
+  assert.equal(manifest[0].description, 'fixture')
+  assert.equal(manifest[0].file, 'brainstorming/SKILL.md')
+  assert.equal(manifest[0].whenToUse, undefined)
+  assert.equal(manifest[0].invocation, undefined)
+  const buffer = await readFile(join(root, 'skills', 'brainstorming', 'SKILL.md'))
+  assert.equal(
+    buffer.subarray(manifest[0].contentOffset).toString('utf8'),
+    'Use test-driven-development.\nLeave superpowers:not-a-real-skill unchanged.\n',
+    'manifest contentOffset must slice the rewritten body exactly',
+  )
 })
 
 test('build merges overlay references and adds the DSH platform pointer idempotently', async (t) => {
@@ -74,19 +88,24 @@ test('build merges overlay references and adds the DSH platform pointer idempote
 
   await cp(join(repoRoot, 'build.mjs'), join(root, 'build.mjs'))
   await cp(join(repoRoot, 'skill-names.mjs'), join(root, 'skill-names.mjs'))
+  await installLocalJsYamlProxy(root)
   execFileSync(process.execPath, ['build.mjs', upstream], { cwd: root, encoding: 'utf8' })
 
-  const builtSkill = await readFile(join(root, 'superpowers', 'skills', 'using-superpowers', 'SKILL.md'), 'utf8')
-  const builtMapping = await readFile(join(root, 'superpowers', 'skills', 'using-superpowers', 'references', 'dsh-tools.md'), 'utf8')
-  const builtUpstream = await readFile(join(root, 'superpowers', 'skills', 'using-superpowers', 'references', 'codex-tools.md'), 'utf8')
+  const builtSkill = await readFile(join(root, 'skills', 'using-superpowers', 'SKILL.md'), 'utf8')
+  const builtMapping = await readFile(join(root, 'skills', 'using-superpowers', 'references', 'dsh-tools.md'), 'utf8')
+  const builtUpstream = await readFile(join(root, 'skills', 'using-superpowers', 'references', 'codex-tools.md'), 'utf8')
 
   assert.equal(builtMapping, 'DSH-TOOLS-MARKER\n')
   assert.equal(builtUpstream, 'upstream reference\n')
   assert.match(builtSkill, /- Hermes Agent: `references\/hermes-tools\.md`\n- DeepSeek Harness: `references\/dsh-tools\.md`/)
 
   execFileSync(process.execPath, ['build.mjs', upstream], { cwd: root, encoding: 'utf8' })
-  const rebuilt = await readFile(join(root, 'superpowers', 'skills', 'using-superpowers', 'SKILL.md'), 'utf8')
+  const rebuilt = await readFile(join(root, 'skills', 'using-superpowers', 'SKILL.md'), 'utf8')
   assert.equal(rebuilt.match(/DeepSeek Harness: `references\/dsh-tools\.md`/g)?.length, 1)
+  const manifest = JSON.parse(await readFile(join(root, 'skills', 'manifest.json'), 'utf8'))
+  assert.equal(manifest.length, 1)
+  assert.equal(manifest[0].name, 'using-superpowers')
+  assert.equal(manifest[0].invocation, undefined)
 })
 
 test('build ships DSH guidance for asking the user and approval gates', async () => {
@@ -109,7 +128,7 @@ test('generated platform reference stays in sync with the overlay', async () => 
     'utf8',
   )
   const generated = await readFile(
-    join(repoRoot, 'superpowers', 'skills', 'using-superpowers', 'references', 'dsh-tools.md'),
+    join(repoRoot, 'skills', 'using-superpowers', 'references', 'dsh-tools.md'),
     'utf8',
   )
   assert.equal(generated, overlay)
@@ -128,6 +147,7 @@ test('build refuses an overlay that would overwrite a copied skill file', async 
 
   await cp(join(repoRoot, 'build.mjs'), join(root, 'build.mjs'))
   await cp(join(repoRoot, 'skill-names.mjs'), join(root, 'skill-names.mjs'))
+  await installLocalJsYamlProxy(root)
   const result = spawnSync(process.execPath, ['build.mjs', upstream], { cwd: root, encoding: 'utf8' })
 
   assert.notEqual(result.status, 0)

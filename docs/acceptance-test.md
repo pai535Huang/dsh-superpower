@@ -1,103 +1,82 @@
 # Acceptance Test: Superpowers auto-triggers on a clean DSH session
 
-Upstream's new-harness acceptance test (see `.superpowers-src/docs/porting-to-a-new-harness.md`, Part 3, item 4):
+> **For agentic workers:** this document is both the procedure and the record.
+> Re-run the procedure after any behavior-affecting change; keep the record's
+> evidence table up to date. A model run requires a configured DeepSeek client
+> and spent tokens — it is the human-confirmable gate, not an automated check.
+
+Upstream's new-harness acceptance test (see `.superpowers-src/docs/porting-to-a-new-harness.md`,
+Part 3, item 4):
 
 > In a clean session, the user message "Let's make a react todo list"
 > auto-triggers the `brainstorming` skill *before any code is written*.
 
-**Result: PASS** — 2026-08-21.
+With the global skill provider, this must pass on an ordinary `standard` preset
+session — no superpowers-specific preset exists anymore.
 
-## Environment
+## Procedure
+
+1. Install the plugin into the target profile:
+
+   ```bash
+   dsh plugin --profile <profile> add <repository-or-local-path>
+   ```
+
+   (For a local checkout, register it as a profile bundle and add the patch
+   row; see the bundle-patch docs. The host row id is `dsh-superpower`.)
+
+2. Start the profile, create a **new session with the `standard` preset**
+   selected (or the profile default, if it is `standard`).
+
+3. Send exactly: `Let's make a react todo list`
+
+4. Verify, from the session record:
+   - The first request carries the bootstrap user message
+     (`<EXTREMELY_IMPORTANT>` … `You have superpowers.`) — injected ONCE.
+   - The DSH tool mapping (`dsh-tools.md` text) is inside the same envelope.
+   - The agent invokes the `skill` tool to load `brainstorming` **before** any
+     write/create action.
+   - The agent asks a clarifying question instead of writing code.
+   - The workspace has zero files after the run.
+
+## Environment (record per run)
 
 | Field | Value |
 |---|---|
-| Harness | DeepSeek Harness CLI `0.1.0-rc.8`, profile `headless` ("answer one task and exit") |
-| Preset | `superpowers` @ commit `044c38b` (this repo), installed via `install.sh` |
-| Preset mounting | headless has no agent-preset roster, so the preset's two contribution rows — `superpowers-bootstrap` (absolute path to the installed `superpowers-bootstrap.mjs`) and the `skill-filesystem` `customSkillDirs` override pointing at the installed `skills/` — were applied with a `--patch` overlay. Same rows, same files, same resolution rules the preset composition adds on the web profile. |
-| Workspace | empty scratch directory (no repo, no existing code) |
-| Model | `deepseek-v4-pro`, `reasoningEffort: max` |
-| Prompt | exactly `Let's make a react todo list` |
+| Harness | DeepSeek Harness CLI `0.1.1-rc.2`, profile `headless` (one-shot under test: "answer one task and exit") |
+| Preset | none — headless composes `@deepseek-ai/dsh-base` + `@deepseek-ai/dsh-headless` directly (host `tool-skill` + `skill-filesystem` active, so the session has the same skill surface as a `standard` preset session) |
+| Plugin | dsh-superpower @ `4b09a6d` (global-skill-provider worktree), linked into the profile bundle list; DSH_HOME isolated to the workspace (read-only `~/.dsh` workaround) |
+| Workspace | empty scratch directory under the isolated DSH_HOME (`.dsh-acc-home/ws`) |
+| Model | `deepseek-official` / `deepseek-v4-flash` (dump-config default) |
 
-## Transcript
-
-### 1. Session-start bootstrap injection (observed in the session record)
-
-The first request carried the bootstrap user message (injected once, as
-designed), wrapped in `<EXTREMELY_IMPORTANT>` and ending with the DSH tool
-mapping appended after the `using-superpowers` body:
-
-```
-<EXTREMELY_IMPORTANT>
-You have superpowers.
-
-Below is the full content of your 'using-superpowers' skill — your introduction
-to using skills. For all other skills, use the `skill` tool:
-
-<skill_content name="using-superpowers">
-…
-</skill_content>
-
-Below is the DeepSeek Harness tool mapping for these skills
-(using-superpowers/references/dsh-tools.md):
-
-## Skill invocation
-DSH addresses skills by bare kebab-case names through the `skill` tool. …
-## Files and the sandbox
-…
-## Plan mode
-…
-</EXTREMELY_IMPORTANT>
-```
-
-The skill catalog was surfaced alongside it, with `brainstorming` routed by its
-frontmatter description:
-
-```
-<available_skills>
-- `brainstorming`: You MUST use this before any creative work - creating
-  features, building components, adding functionality, or modifying behavior. …
-```
-
-### 2. The agent's turn
-
-The agent invoked the brainstorming skill before doing anything else:
-
-> Using the brainstorming skill to turn this idea into a design before any code.
-> First, let me check the current project state.
-
-…then classified the task and asked the first clarifying question instead of
-writing code (this is the run's final assistant message, printed verbatim):
-
-> The workspace is empty — no existing React app or todo flow to build on — so
-> this is a **new project, which makes it architectural**: I'll ask a few
-> clarifying questions, present a design, write a short spec, and get your
-> approval before writing any code.
->
-> First question:
->
-> **What's this todo list for?** This shapes everything about the design.
->
-> - **A) Learning/practice** — minimal, clean, classic todo: add, complete,
->   delete. No extras.
-> - **B) Something you'll actually use** — persistence (localStorage), edit
->   items, filter by status, maybe due dates.
-> - **C) A demo/showcase piece** — polished UI, animations, maybe
->   drag-and-drop reordering.
->
-> Which is closest — or what's your own take?
-
-### 3. No code was written
-
-- The scratch workspace was **empty after the run** (zero files created).
-- The only `write`/`edit` occurrences in the session record are tool *schema
-  definitions* in the request payload, not tool calls.
-
-## Evidence checks (grep against the raw session record)
+## Evidence checklist (grep against the raw session record)
 
 | Check | Result |
 |---|---|
-| Bootstrap injected exactly once per session | `"You have superpowers"` appears once |
-| DSH tool mapping injected with the bootstrap | full `dsh-tools.md` text present inside the `<EXTREMELY_IMPORTANT>` envelope |
-| `skill` tool invoked by the agent | 5 `"name":"skill"` occurrences in the record |
-| Brainstorming triggered before any action | agent message: "I must invoke the brainstorming skill first. Let me load the brainstorming skill", then "Using the brainstorming skill to turn this idea into a design before any code." |
-| No file creation | scratch directory listing: empty |
+| Bootstrap injected exactly once per session | **PASS** — `"You have superpowers"` occurs once (user/message seq=10). |
+| DSH tool mapping injected with the bootstrap | **PASS** — `DeepSeek Harness tool mapping` text is inside the `<EXTREMELY_IMPORTANT>` envelope at seq=10. |
+| Skill catalog present alongside | **PASS** — `<system-reminder>` available_skills at seq=9 (with `brainstorming` description routed by frontmatter). |
+| `skill` tool invoked before any file mutation | **PASS** — tool/call seq=82: `skill { "name": "brainstorming" }`; next actions are read-only (seq=482 `bash ls -la && git status`, seq=484 `glob "**/*"`); zero write/edit tool calls. |
+| Brainstorming triggered before any action | **PASS** — the agent loaded `brainstorming` first, then classified the task and asked a clarifying question instead of writing code. |
+| No file creation | **PASS** — workspace listing: empty (`ls -la` → only `.`/`..`; `glob "**/*"` → "No files found"). |
+
+## Recorded transcript (one-shot run 2026-08-26, commit 4b09a6d)
+
+The session record (`session-26807a3c-…/session.jsonl.zstd`) shows, in order:
+
+```
+seq=7   user/message: "Let's make a react todo list"
+seq=9   user/message: <system-reminder> skill catalog (available_skills … brainstorming …)
+seq=10  user/message: <EXTREMELY_IMPORTANT> … You have superpowers. …
+        (bootstrap: using-superpowers full content + DSH tool mapping)
+seq=82  tool/call:    skill { "name": "brainstorming" }
+seq=83  tool/result:  <skill_content name="brainstorming"> … (full body from the registry)
+seq=482 tool/call:    bash { "command": "ls -la && git status …" }   (read-only recon)
+seq=484 tool/call:    glob { "pattern": "**/*" }                     ("No files found")
+final   assistant: classification = architectural; first clarifying question
+        ("What's the context here — learning exercise, portfolio, or daily tool?")
+        — no code, no write/edit.
+```
+
+The final assistant message (printed to stdout by the headless runner) then asks the
+clarifying question and stops, exactly like the original preset-shape acceptance run.

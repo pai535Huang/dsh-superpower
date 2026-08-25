@@ -1,37 +1,18 @@
 import assert from 'node:assert/strict'
-import { cp, mkdir, writeFile } from 'node:fs/promises'
-import { pathToFileURL } from 'node:url'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import test from 'node:test'
 
-import { repoRoot, temporaryDirectory } from './helpers.mjs'
+import { temporaryDirectory } from './helpers.mjs'
+import { applyBootstrap } from '../lib/bootstrap.mjs'
 
-/**
- * Load the plugin the way the harness does: from an installed preset directory
- * with NO `node_modules` anywhere above it.
- *
- * The preset is installed under `$DSH_HOME/.agent-presets/superpowers/`, so a
- * relative row's own `import` statements resolve from the user's home and can
- * never reach the harness's `node_modules`. A bare `@deepseek-ai/dsh-*` import
- * therefore throws ERR_MODULE_NOT_FOUND, fails the row, and fails the whole
- * preset mount — which shows up in the GUI as a preset that cannot be selected.
- * Fabricating the dependency here (as an earlier version of this test did) hides
- * exactly that failure, so this loader supplies nothing but the file itself.
- */
-async function loadBootstrap(t) {
-  const root = await temporaryDirectory(t, 'dsh-superpower-bootstrap')
-  const pluginDirectory = join(root, 'superpowers')
-  await mkdir(pluginDirectory, { recursive: true })
-  await cp(join(repoRoot, 'superpowers', 'superpowers-bootstrap.mjs'), join(pluginDirectory, 'superpowers-bootstrap.mjs'))
-  return import(`${pathToFileURL(join(pluginDirectory, 'superpowers-bootstrap.mjs')).href}?test=${Date.now()}`)
-}
-
-function harness(skillResult = { content: 'routing rules', name: 'using-superpowers', provider: 'filesystem' }) {
+function harness({ skillResult = { content: 'routing rules', name: 'using-superpowers', provider: 'runtime', source: 'superpowers' }, hasSkillTool = true } = {}) {
   const handlers = new Map()
   const warnings = []
   const ctx = {
     on(event, handler) { handlers.set(event, handler) },
     skills: { async get() { return skillResult } },
+    tools: { get(name) { return hasSkillTool ? { name } : undefined } },
     logger: { warn(message) { warnings.push(message) } },
   }
   return { ctx, handlers, warnings }
@@ -41,10 +22,9 @@ async function runPreStep(handler, session, decision = { messages: [] }) {
   return handler({ agent: { session }, signal: undefined }, async () => decision)
 }
 
-test('bootstrap injects once, then injects again after compaction', async (t) => {
-  const { apply } = await loadBootstrap(t)
+test('bootstrap injects once, then injects again after compaction', async () => {
   const { ctx, handlers } = harness()
-  apply(ctx)
+  applyBootstrap(ctx)
   const session = { id: 'top-level', header: { cwd: '/tmp/project', delegationDepth: 0 } }
 
   const first = await runPreStep(handlers.get('agent/pre-step'), session)
@@ -62,45 +42,48 @@ test('bootstrap injects once, then injects again after compaction', async (t) =>
   assert.equal(afterCompaction.messages.length, 1)
 })
 
-test('bootstrap declares the inject cordis needs to read ctx.skills', async (t) => {
-  const module = await loadBootstrap(t)
-  assert.equal(module.name, 'superpowers-bootstrap')
-  assert.ok(Array.isArray(module.inject), 'inject must be a declared array')
-  assert.ok(module.inject.includes('skills'), 'ctx.skills throws without a declared inject')
+test('bootstrap skips agents whose tool view has no skill tool', async () => {
+  const { ctx, handlers, warnings } = harness({ hasSkillTool: false, skillResult: null })
+  applyBootstrap(ctx)
+  const session = { id: 'minimal-shape', header: { cwd: '/tmp/project', delegationDepth: 0 } }
+
+  const result = await runPreStep(handlers.get('agent/pre-step'), session)
+  assert.deepEqual(result, { messages: [] })
+  assert.equal(warnings.length, 0, 'no skill tool must skip before touching the registry')
+
+  const again = await runPreStep(handlers.get('agent/pre-step'), session)
+  assert.deepEqual(again, { messages: [] })
 })
 
-test('bootstrap imports node: builtins only, so the preset row can be loaded', async (t) => {
-  const { readFile } = await import('node:fs/promises')
-  const source = await readFile(join(repoRoot, 'superpowers', 'superpowers-bootstrap.mjs'), 'utf8')
-  const specifiers = [...source.matchAll(/^\s*(?:import|export)[^'"\n]*from\s*['"]([^'"]+)['"]/gm)].map((m) => m[1])
-  const bare = specifiers.filter((s) => !s.startsWith('node:') && !s.startsWith('.') && !s.startsWith('/'))
-  assert.deepEqual(bare, [], `a preset-relative row cannot resolve bare specifiers: ${bare.join(', ')}`)
-})
-
-test('bootstrap rejects nothing when the step decision is a rejection', async (t) => {
-  const { apply } = await loadBootstrap(t)
+test('bootstrap declares no dependency on preset ids (guard is tool visibility)', async () => {
   const { ctx, handlers } = harness()
-  apply(ctx)
-  const session = { id: 'rejected', header: { cwd: '/tmp/project', delegationDepth: 0 } }
-
-  const result = await runPreStep(handlers.get('agent/pre-step'), session, { kind: 'reject', reason: 'no input' })
-  assert.deepEqual(result, { kind: 'reject', reason: 'no input' })
+  applyBootstrap(ctx)
+  const session = { id: 'some-future-preset', header: { cwd: '/tmp/project', delegationDepth: 0 } }
+  const result = await runPreStep(handlers.get('agent/pre-step'), session)
+  assert.equal(result.messages.length, 1)
 })
 
-test('bootstrap skips delegated sessions', async (t) => {
-  const { apply } = await loadBootstrap(t)
+test('bootstrap skips delegated sessions', async () => {
   const { ctx, handlers } = harness()
-  apply(ctx)
+  applyBootstrap(ctx)
   const delegated = { id: 'child', header: { cwd: '/tmp/project', delegationDepth: 1 } }
 
   const result = await runPreStep(handlers.get('agent/pre-step'), delegated)
   assert.deepEqual(result, { messages: [] })
 })
 
-test('bootstrap fails open when the routing skill is unavailable', async (t) => {
-  const { apply } = await loadBootstrap(t)
-  const { ctx, handlers, warnings } = harness(null)
-  apply(ctx)
+test('bootstrap rejects nothing when the step decision is a rejection', async () => {
+  const { ctx, handlers } = harness()
+  applyBootstrap(ctx)
+  const session = { id: 'rejected', header: { cwd: '/tmp/project', delegationDepth: 0 } }
+
+  const result = await runPreStep(handlers.get('agent/pre-step'), session, { kind: 'reject', reason: 'no input' })
+  assert.deepEqual(result, { kind: 'reject', reason: 'no input' })
+})
+
+test('bootstrap fails open when the routing skill is unavailable', async () => {
+  const { ctx, handlers, warnings } = harness({ skillResult: null })
+  applyBootstrap(ctx)
   const session = { id: 'missing-skill', header: { cwd: '/tmp/project', delegationDepth: 0 } }
 
   const result = await runPreStep(handlers.get('agent/pre-step'), session)
@@ -114,15 +97,16 @@ test('bootstrap appends the DSH tool mapping from the skill resource base', asyn
   await mkdir(references, { recursive: true })
   await writeFile(join(references, 'dsh-tools.md'), 'DSH-TOOLS-MARKER: use the skill tool with bare names.\n')
 
-  const { apply } = await loadBootstrap(t)
-  const skill = {
-    name: 'using-superpowers',
-    provider: 'filesystem',
-    content: 'routing rules',
-    resourceBase: { kind: 'directory', path: join(root, 'skills', 'using-superpowers') },
-  }
-  const { ctx, handlers } = harness(skill)
-  apply(ctx)
+  const { ctx, handlers } = harness({
+    skillResult: {
+      name: 'using-superpowers',
+      provider: 'runtime',
+      source: 'superpowers',
+      content: 'routing rules',
+      resourceBase: { kind: 'directory', path: join(root, 'skills', 'using-superpowers') },
+    },
+  })
+  applyBootstrap(ctx)
   const session = { id: 'top-level', header: { cwd: '/tmp/project', delegationDepth: 0 } }
 
   const result = await runPreStep(handlers.get('agent/pre-step'), session)
@@ -140,15 +124,16 @@ test('bootstrap still injects when the tool mapping file is missing', async (t) 
   const skillDir = join(root, 'skills', 'using-superpowers')
   await mkdir(skillDir, { recursive: true })
 
-  const { apply } = await loadBootstrap(t)
-  const skill = {
-    name: 'using-superpowers',
-    provider: 'filesystem',
-    content: 'routing rules',
-    resourceBase: { kind: 'directory', path: skillDir },
-  }
-  const { ctx, handlers, warnings } = harness(skill)
-  apply(ctx)
+  const { ctx, handlers, warnings } = harness({
+    skillResult: {
+      name: 'using-superpowers',
+      provider: 'runtime',
+      source: 'superpowers',
+      content: 'routing rules',
+      resourceBase: { kind: 'directory', path: skillDir },
+    },
+  })
+  applyBootstrap(ctx)
   const session = { id: 'top-level', header: { cwd: '/tmp/project', delegationDepth: 0 } }
 
   const result = await runPreStep(handlers.get('agent/pre-step'), session)
@@ -156,4 +141,13 @@ test('bootstrap still injects when the tool mapping file is missing', async (t) 
   assert.match(text, /<skill_instructions>\nrouting rules\n<\/skill_instructions>/)
   assert.doesNotMatch(text, /DSH-TOOLS-MARKER/)
   assert.ok(warnings.some((w) => /dsh-tools\.md/.test(w)))
+})
+
+test('bootstrap imports node: builtins only (zero runtime dependencies)', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const { repoRoot } = await import('./helpers.mjs')
+  const source = await readFile(join(repoRoot, 'lib', 'bootstrap.mjs'), 'utf8')
+  const specifiers = [...source.matchAll(/^\s*(?:import|export)[^'"\n]*from\s*['"]([^'"]+)['"]/gm)].map((m) => m[1])
+  const bare = specifiers.filter((s) => !s.startsWith('node:') && !s.startsWith('.') && !s.startsWith('/'))
+  assert.deepEqual(bare, [], `lib/bootstrap.mjs cannot resolve bare specifiers: ${bare.join(', ')}`)
 })
