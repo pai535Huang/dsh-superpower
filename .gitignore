@@ -40,3 +40,6 @@ node_modules/
 /AGENTS.md
 /CLAUDE.md
 /GEMINI.md
+
+# Git worktrees (isolated workspaces)
+/.worktrees/
