@@ -77,6 +77,11 @@ npm run check                  # 测试 + validate（manifest 与 SKILL.md 逐�
 - `docs/acceptance-test.md` — 上游验收（"Let's make a react todo list" 在 standard
   预设下先触发 brainstorming 再写代码）的执行记录与证据清单。
 
+## 协作约定
+
+- 小改动（≤ 100 行 diff）：打开 PR 后由 CI 自动合并（检查通过即合），合并后分支自动删除。
+- 大改动（> 100 行 diff）：由维护者人工审阅后合并，bot 会在 PR 上提示。
+
 ## 说明
 
 - 上游仓库的 `AGENTS.md`/`CLAUDE.md` 属于上游贡献规范，不适用于本仓库。
