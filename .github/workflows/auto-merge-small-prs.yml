@@ -1,6 +1,6 @@
 name: Auto-merge small PRs
 
-# 小改动（≤ 50 行 diff）自动合并并删除分支；大改动留给人工。
+# 小改动（≤ 100 行 diff）自动合并并删除分支；大改动留给人工。
 # 阈值修改：把下面 SMALL_PR_LINES 改掉即可。
 
 on:
@@ -12,7 +12,7 @@ permissions:
   pull-requests: write
 
 env:
-  SMALL_PR_LINES: 50
+  SMALL_PR_LINES: 100
 
 jobs:
   maybe-auto-merge:
