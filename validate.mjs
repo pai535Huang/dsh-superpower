@@ -107,7 +107,10 @@ if (!existsSync(manifestFile)) {
       if (entry.contentOffset !== actual.contentOffset) {
         fail(`${dir}: manifest contentOffset ${entry.contentOffset} != ${actual.contentOffset} in SKILL.md`)
       }
-      if (entry.file !== `${dir}/SKILL.md`) fail(`${dir}: manifest file must be "${dir}/SKILL.md"`)
+      if (entry.file !== `${dir}/SKILL.md`) {
+        fail(`${dir}: manifest file must be "${dir}/SKILL.md"`)
+        continue
+      }
       if (entry.contentOffset < 0 || entry.contentOffset > readFileSync(join(SKILLS, entry.file)).length) {
         fail(`${dir}: manifest contentOffset out of range`)
       }
