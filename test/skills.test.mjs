@@ -37,6 +37,7 @@ test('list discovers a skill directory that carries a SKILL.md', async (t) => {
   assert.equal(c.path, join(root, 'brainstorming', 'SKILL.md'))
   assert.equal(c.locator, join(root, 'brainstorming'))
   assert.equal(c.source, 'superpowers')
+  assert.equal(c.provider, 'dsh-superpower')
   assert.equal(typeof c.rank, 'number')
 })
 
