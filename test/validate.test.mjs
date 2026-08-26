@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -24,18 +24,7 @@ test('validation loads js-yaml from the project dependency', async (t) => {
   assert.match(result.stdout, /PASS/)
 })
 
-test('validation rejects a missing bundled skill', async (t) => {
-  const root = await temporaryDirectory(t, 'dsh-superpower-validate-missing')
-  await copyValidationProject(root)
-  await rm(join(root, 'skills', 'brainstorming'), { recursive: true })
-
-  const result = validate(root)
-
-  assert.notEqual(result.status, 0)
-  assert.match(`${result.stdout}\n${result.stderr}`, /missing bundled skill.*brainstorming/i)
-})
-
-test('validation rejects an unexpected bundled skill', async (t) => {
+test('validation accepts extra/custom skills (no fixed upstream set)', async (t) => {
   const root = await temporaryDirectory(t, 'dsh-superpower-validate-extra')
   await copyValidationProject(root)
   const extra = join(root, 'skills', 'experimental-workflow')
@@ -45,41 +34,55 @@ test('validation rejects an unexpected bundled skill', async (t) => {
     'name: experimental-workflow',
     'description: test-only extra skill',
     '---',
-    '',
+    'body\n',
+  ].join('\n'))
+
+  const result = validate(root)
+
+  assert.equal(result.status, 0, result.stdout + result.stderr)
+  assert.match(result.stdout, /experimental-workflow/)
+})
+
+test('validation rejects a SKILL.md with no frontmatter block', async (t) => {
+  const root = await temporaryDirectory(t, 'dsh-superpower-validate-no-frontmatter')
+  await copyValidationProject(root)
+  await writeFile(join(root, 'skills', 'brainstorming', 'SKILL.md'), '# body without frontmatter\n')
+
+  const result = validate(root)
+
+  assert.notEqual(result.status, 0)
+  assert.match(`${result.stdout}\n${result.stderr}`, /brainstorming.*frontmatter/i)
+})
+
+test('validation rejects a frontmatter name that differs from the directory', async (t) => {
+  const root = await temporaryDirectory(t, 'dsh-superpower-validate-name-mismatch')
+  await copyValidationProject(root)
+  await writeFile(join(root, 'skills', 'brainstorming', 'SKILL.md'), [
+    '---',
+    'name: different',
+    'description: s',
+    '---',
+    'body\n',
   ].join('\n'))
 
   const result = validate(root)
 
   assert.notEqual(result.status, 0)
-  assert.match(`${result.stdout}\n${result.stderr}`, /unexpected bundled skill.*experimental-workflow/i)
+  assert.match(`${result.stdout}\n${result.stderr}`, /name "different" differs/)
 })
 
-test('validation rejects a manifest entry that disagrees with SKILL.md', async (t) => {
-  const root = await temporaryDirectory(t, 'dsh-superpower-validate-manifest-mismatch')
+test('validation rejects a skill missing its description', async (t) => {
+  const root = await temporaryDirectory(t, 'dsh-superpower-validate-missing-desc')
   await copyValidationProject(root)
-  const manifestFile = join(root, 'skills', 'manifest.json')
-  const manifest = JSON.parse(await readFile(manifestFile, 'utf8'))
-  const entry = manifest.find((e) => e.name === 'brainstorming')
-  entry.description = 'tampered'
-  await writeFile(manifestFile, JSON.stringify(manifest, null, 2) + '\n')
+  await writeFile(join(root, 'skills', 'brainstorming', 'SKILL.md'), [
+    '---',
+    'name: brainstorming',
+    '---',
+    'body\n',
+  ].join('\n'))
 
   const result = validate(root)
 
   assert.notEqual(result.status, 0)
-  assert.match(`${result.stdout}\n${result.stderr}`, /brainstorming.*description/i)
-})
-
-test('validation rejects a manifest entry with a wrong contentOffset', async (t) => {
-  const root = await temporaryDirectory(t, 'dsh-superpower-validate-manifest-offset')
-  await copyValidationProject(root)
-  const manifestFile = join(root, 'skills', 'manifest.json')
-  const manifest = JSON.parse(await readFile(manifestFile, 'utf8'))
-  const entry = manifest.find((e) => e.name === 'brainstorming')
-  entry.contentOffset = entry.contentOffset + 1
-  await writeFile(manifestFile, JSON.stringify(manifest, null, 2) + '\n')
-
-  const result = validate(root)
-
-  assert.notEqual(result.status, 0)
-  assert.match(`${result.stdout}\n${result.stderr}`, /contentOffset/i)
+  assert.match(`${result.stdout}\n${result.stderr}`, /missing description/)
 })

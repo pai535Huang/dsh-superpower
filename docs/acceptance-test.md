@@ -5,13 +5,13 @@
 > evidence table up to date. A model run requires a configured DeepSeek client
 > and spent tokens — it is the human-confirmable gate, not an automated check.
 
-Upstream's new-harness acceptance test (see `.superpowers-src/docs/porting-to-a-new-harness.md`,
-Part 3, item 4):
+Upstream's new-harness acceptance test (Part 3, item 4 of
+[obra/superpowers](https://github.com/obra/superpowers/)' porting guide):
 
 > In a clean session, the user message "Let's make a react todo list"
 > auto-triggers the `brainstorming` skill *before any code is written*.
 
-With the global skill provider, this must pass on an ordinary `standard` preset
+With the host skill provider, this must pass on an ordinary `standard` preset
 session — no superpowers-specific preset exists anymore.
 
 ## Procedure
@@ -45,7 +45,7 @@ session — no superpowers-specific preset exists anymore.
 |---|---|
 | Harness | DeepSeek Harness CLI `0.1.1-rc.2`, profile `headless` (one-shot under test: "answer one task and exit") |
 | Preset | none — headless composes `@deepseek-ai/dsh-base` + `@deepseek-ai/dsh-headless` directly (host `tool-skill` + `skill-filesystem` active, so the session has the same skill surface as a `standard` preset session) |
-| Plugin | dsh-superpower @ `4b09a6d` (global-skill-provider worktree), linked into the profile bundle list; DSH_HOME isolated to the workspace (read-only `~/.dsh` workaround) |
+| Plugin | dsh-superpower @ `4b09a6d`, linked into the profile bundle list; DSH_HOME isolated to the workspace (read-only `~/.dsh` workaround) |
 | Workspace | empty scratch directory under the isolated DSH_HOME (`.dsh-acc-home/ws`) |
 | Model | `deepseek-official` / `deepseek-v4-flash` (dump-config default) |
 

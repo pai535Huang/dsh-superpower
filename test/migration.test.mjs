@@ -17,20 +17,22 @@ test('host plugin declares cordis metadata and injects skills + tools', () => {
 })
 
 function harness(home) {
-  const registered = []
   const warnings = []
   const infos = []
   const handlers = new Map()
+  let provider
   const ctx = {
     on(event, handler) { handlers.set(event, handler) },
-    skills: { register(def) { registered.push(def) } },
+    skills: {
+      registerProvider(factory) { provider = factory({}) },
+    },
     tools: { get() { return { name: 'skill' } } },
     logger: {
       warn(message) { warnings.push(message) },
       info(message) { infos.push(message) },
     },
   }
-  return { ctx, registered, warnings, infos, handlers }
+  return { ctx, getProvider: () => provider, warnings, infos, handlers }
 }
 
 /**
@@ -48,13 +50,16 @@ async function withDshHome(t, home, fn) {
   return await fn()
 }
 
-test('apply registers all 14 skills from the bundled manifest', async (t) => {
+test('apply registers a provider that discovers all 14 bundled skills', async (t) => {
   const home = await temporaryDirectory(t, 'dsh-superpower-migrate-register')
-  const { ctx, registered } = harness(home)
+  const { ctx, getProvider } = harness(home)
   await withDshHome(t, home, () => apply(ctx))
-  const names = registered.map((d) => d.name).sort()
-  assert.deepEqual(names, [...SUPERPOWERS_SKILLS].sort())
-  for (const def of registered) {
+  const provider = getProvider()
+  assert.ok(provider, 'apply must register a skill provider')
+  const candidates = await provider.list({})
+  assert.deepEqual(candidates.map((c) => c.name).sort(), [...SUPERPOWERS_SKILLS].sort())
+  for (const candidate of candidates) {
+    const def = await provider.get(candidate, {})
     assert.ok(def.content.length > 0, `${def.name} needs a body`)
     assert.equal(def.source, 'superpowers')
     assert.equal(def.resourceBase.kind, 'directory')

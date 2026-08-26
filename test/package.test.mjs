@@ -27,7 +27,6 @@ test('package exposes a DSH bundle and packs every runtime file', async (t) => {
     'lib/index.js',
     'lib/bootstrap.mjs',
     'lib/skills.mjs',
-    'skills/manifest.json',
     'skills/using-superpowers/SKILL.md',
   ]) assert.ok(files.has(required), `packed artifact is missing ${required}`)
   assert.equal([...files].some((path) => path.startsWith('test/')), false)

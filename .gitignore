@@ -1,6 +1,5 @@
-# Dependencies and upstream working copy
+# Dependencies and transient directories
 node_modules/
-.superpowers-src/
 .tmp-acceptance/
 
 # AI coding agent local state/cache

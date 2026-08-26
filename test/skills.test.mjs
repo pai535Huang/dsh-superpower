@@ -4,83 +4,100 @@ import { join } from 'node:path'
 import test from 'node:test'
 
 import { temporaryDirectory } from './helpers.mjs'
-import { loadSkillDefinitions, registerSkills } from '../lib/skills.mjs'
+import { createSkillProvider } from '../lib/skills.mjs'
 
-async function scaffold(t, manifestEntries, body = 'skill body\n') {
-  const root = await temporaryDirectory(t, 'dsh-superpower-skills')
-  await mkdir(join(root, 'brainstorming'), { recursive: true })
-  await writeFile(join(root, 'brainstorming', 'SKILL.md'),
-    '---\nname: brainstorming\ndescription: fixture skill\n---\n' + body)
-  await writeFile(join(root, 'manifest.json'),
-    JSON.stringify(manifestEntries, null, 2) + '\n')
+/** Write one skill dir (SKILL.md plus optional extra files) under a temp root. */
+async function scaffold(t, files = {}) {
+  const root = await temporaryDirectory(t, 'dsh-superpower-skill-provider')
+  for (const [dir, contents] of Object.entries(files)) {
+    await mkdir(join(root, dir), { recursive: true })
+    for (const [file, text] of Object.entries(contents)) {
+      await writeFile(join(root, dir, file), text)
+    }
+  }
   return root
 }
 
-test('loadSkillDefinitions reads manifest and slices the body at contentOffset', async (t) => {
-  const root = await scaffold(t, [{
-    name: 'brainstorming',
-    description: 'fixture skill',
-    file: 'brainstorming/SKILL.md',
-    contentOffset: 55, // byte offset of the body after '---\nname: brainstorming\ndescription: fixture skill\n---\n'
-  }])
-  const definitions = loadSkillDefinitions(root)
-  assert.equal(definitions.length, 1)
-  const def = definitions[0]
-  assert.equal(def.name, 'brainstorming')
-  assert.equal(def.description, 'fixture skill')
-  assert.equal(def.content, 'skill body\n')
-  assert.equal(def.source, 'superpowers')
-  assert.deepEqual(def.resourceBase, { kind: 'directory', path: join(root, 'brainstorming') })
-  assert.equal(def.path, join(root, 'brainstorming', 'SKILL.md'))
-  assert.equal(def.whenToUse, undefined)
-  assert.equal(def.invocation, undefined)
+const frontmatter = (body = 'skill body\n') =>
+  '---\nname: brainstorming\ndescription: fixture skill\n---\n' + body
+
+function providerFor(root) {
+  return createSkillProvider(root)({})
+}
+
+test('list discovers a skill directory that carries a SKILL.md', async (t) => {
+  const root = await scaffold(t, {
+    brainstorming: { 'SKILL.md': frontmatter() },
+  })
+  const candidates = await providerFor(root).list({})
+  assert.equal(candidates.length, 1)
+  const c = candidates[0]
+  assert.equal(c.name, 'brainstorming')
+  assert.equal(c.description, 'fixture skill')
+  assert.equal(c.path, join(root, 'brainstorming', 'SKILL.md'))
+  assert.equal(c.locator, join(root, 'brainstorming'))
+  assert.equal(c.source, 'superpowers')
+  assert.equal(typeof c.rank, 'number')
 })
 
-test('loadSkillDefinitions carries whenToUse and invocation from the manifest', async (t) => {
-  const root = await scaffold(t, [{
-    name: 'brainstorming',
-    description: 'fixture skill',
-    file: 'brainstorming/SKILL.md',
-    contentOffset: 55,
-    whenToUse: 'when user says design',
-    invocation: { modelInvocable: false, userInvocable: true },
-  }])
-  const [def] = loadSkillDefinitions(root)
-  assert.equal(def.whenToUse, 'when user says design')
+test('list skips directories without a SKILL.md and non-skill files', async (t) => {
+  const root = await scaffold(t, {
+    brainstorming: { 'SKILL.md': frontmatter() },
+    'not-a-skill': { 'README.md': 'no SKILL.md here\n' },
+    'loose-file.md': 'floating file\n',
+  })
+  const candidates = await providerFor(root).list({})
+  assert.deepEqual(candidates.map((c) => c.name), ['brainstorming'])
+})
+
+test('get returns the parsed body and a directory resource base', async (t) => {
+  const root = await scaffold(t, {
+    brainstorming: { 'SKILL.md': frontmatter('first line\nsecond line\n') },
+  })
+  const provider = providerFor(root)
+  const [candidate] = await provider.list({})
+  const def = await provider.get(candidate, {})
+  assert.equal(def.name, 'brainstorming')
+  assert.equal(def.description, 'fixture skill')
+  assert.equal(def.content, 'first line\nsecond line\n')
+  assert.deepEqual(def.resourceBase, { kind: 'directory', path: join(root, 'brainstorming') })
+  assert.equal(def.path, join(root, 'brainstorming', 'SKILL.md'))
+  assert.equal(def.source, 'superpowers')
+  assert.equal(def.provider, 'dsh-superpower')
+  assert.deepEqual(def.invocation, { modelInvocable: true, userInvocable: true })
+})
+
+test('get returns undefined for a candidate whose file vanished', async (t) => {
+  const root = await scaffold(t, {
+    brainstorming: { 'SKILL.md': frontmatter() },
+  })
+  const provider = providerFor(root)
+  const [candidate] = await provider.list({})
+  const def = await provider.get({ ...candidate, path: join(root, 'missing', 'SKILL.md') }, {})
+  assert.equal(def, undefined)
+})
+
+test('frontmatter parsing carries whenToUse and honors invocation flags', async (t) => {
+  const root = await scaffold(t, {
+    brainstorming: {
+      'SKILL.md':
+        '---\nname: brainstorming\ndescription: "fixture with: a colon"\nwhenToUse: when the user says design\ndisable-model-invocation: true\n---\nbody\n',
+    },
+  })
+  const provider = providerFor(root)
+  const [candidate] = await provider.list({})
+  assert.equal(candidate.whenToUse, 'when the user says design')
+  const def = await provider.get(candidate, {})
+  assert.equal(def.whenToUse, 'when the user says design')
   assert.deepEqual(def.invocation, { modelInvocable: false, userInvocable: true })
 })
 
-test('loadSkillDefinitions rejects a missing manifest', async (t) => {
-  const root = await temporaryDirectory(t, 'dsh-superpower-skills-nomanifest')
-  assert.throws(() => loadSkillDefinitions(root), /manifest not found/)
-})
-
-test('loadSkillDefinitions rejects an invalid contentOffset', async (t) => {
-  const root = await scaffold(t, [{
-    name: 'brainstorming',
-    description: 'fixture skill',
-    file: 'brainstorming/SKILL.md',
-    contentOffset: 99999,
-  }])
-  assert.throws(() => loadSkillDefinitions(root), /contentOffset/)
-})
-
-test('loadSkillDefinitions rejects an entry without description', async (t) => {
-  const root = await scaffold(t, [{
-    name: 'brainstorming',
-    file: 'brainstorming/SKILL.md',
-    contentOffset: 0,
-  }])
-  assert.throws(() => loadSkillDefinitions(root), /missing description/)
-})
-
-test('registerSkills registers every definition and returns the count', () => {
-  const calls = []
-  const ctx = { skills: { register(def) { calls.push(def) } } }
-  const count = registerSkills(ctx, [
-    { name: 'a', content: 'x', source: 'superpowers' },
-    { name: 'b', content: 'y', source: 'superpowers' },
-  ])
-  assert.equal(count, 2)
-  assert.deepEqual(calls.map((c) => c.name), ['a', 'b'])
+test('provider shape is the registered factory contract', async (t) => {
+  const root = await scaffold(t, {
+    brainstorming: { 'SKILL.md': frontmatter() },
+  })
+  const provider = createSkillProvider(root)({})
+  assert.equal(typeof provider.name, 'string')
+  assert.equal(typeof provider.list, 'function')
+  assert.equal(typeof provider.get, 'function')
 })
